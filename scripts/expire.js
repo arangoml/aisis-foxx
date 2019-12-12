@@ -19,7 +19,6 @@ REMOVE { _key: key } IN aisisInstances
 `
 
 function removeDatabase(dbName, key) {
-  console.log(db._engineStats())
   db._dropDatabase(dbName)
   expired.push(key)
 }

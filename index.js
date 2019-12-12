@@ -2,14 +2,43 @@
 const { aql, query, db } = require("@arangodb");
 const createRouter = require('@arangodb/foxx/router');
 const users = require("@arangodb/users");
+const auth = require("./util/authenticator");
 
 const router = createRouter();
 const joi = require('joi');
 
 const aisisInstances = "aisisInstances"
 
+const sessions = require("./util/sessions");
+module.context.use(sessions);
+
 module.context.use(router);
 
+router
+  .post("/login", function(req, res) {
+    const user = users.firstExample({
+      username: req.body.username
+    });
+    const valid = auth.verify(
+      // Pretend to validate even if no user was found
+      user ? user.authData : {},
+      req.body.password
+    );
+    if (!valid) res.throw("unauthorized");
+    // Log the user in using the key
+    // because usernames might change
+    req.session.uid = user._key;
+    req.sessionStorage.save(req.session);
+    res.send({ username: user.username });
+  })
+  .body(
+    joi
+      .object({
+        username: joi.string().required(),
+        password: joi.string().required()
+      })
+      .required()
+  );
 router.post('/createDB', function (req,res) {
   const data = req.body;
   const dbName = data.dbName ? data.dbName : randomStringGenerator();
