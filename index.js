@@ -2,8 +2,7 @@
 const { aql, query, db } = require("@arangodb");
 const createRouter = require('@arangodb/foxx/router');
 const users = require("@arangodb/users");
-const auth = require("./util/authenticator");
-
+const auth = require("./util/auth");
 const router = createRouter();
 const joi = require('joi');
 
@@ -14,38 +13,34 @@ module.context.use(sessions);
 
 module.context.use(router);
 
-router
-  .post("/login", function(req, res) {
-    const user = users.firstExample({
-      username: req.body.username
-    });
-    const valid = auth.verify(
-      // Pretend to validate even if no user was found
-      user ? user.authData : {},
-      req.body.password
-    );
-    if (!valid) res.throw("unauthorized");
-    // Log the user in using the key
-    // because usernames might change
-    req.session.uid = user._key;
-    req.sessionStorage.save(req.session);
-    res.send({ username: user.username });
-  })
-  .body(
-    joi
-      .object({
-        username: joi.string().required(),
-        password: joi.string().required()
-      })
-      .required()
-  );
 router.post('/createDB', function (req,res) {
   const data = req.body;
   const dbName = data.dbName ? data.dbName : randomStringGenerator();
   const username = data.username ? data.username : randomStringGenerator();
   const password = data.password ? data.password : randomStringGenerator();
-  const email = data.email ? data.email : 'noreply@arangodb.com'
+  const email = data.email ? data.email : 'noreply@arangodb.com';
+  const userCollection = db._collection("users");
 
+// Before creating any users or databases confirm user is authorized to do so.
+  // 'authuser' and 'authpassword' must be supplied in request body
+  // Finds admin-root user created during setup
+    const authuser = data.authuser ? userCollection.firstExample({
+    authuser: data.authuser
+  }) : '';
+
+  // Verifies the stored hash against the supplied password.
+  const valid = auth.verify(
+    authuser ? authuser.authpassword : {},
+    data.authpassword
+  );
+
+  if(!valid) {
+    res.throw(401, "Invalid authorization username or password.");
+  }
+
+  // If valid authuser a session is stored and request continues.
+  req.session.uid = authuser._key;
+  req.sessionStorage.save(req.session);
 
 // If user doesn't exist, create the user
   try {
@@ -83,7 +78,7 @@ router.post('/createDB', function (req,res) {
     } INTO aisisInstances`
 
     res.send({dbName, username, password, hostname, port});
-  }
+    }
 })
 .body(joi.object().required(), 'Creates a new database, optionally provide dbName, username, or password ')
 .response(joi.object().required(), 'Returns database name, username, and password.')

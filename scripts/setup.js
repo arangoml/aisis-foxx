@@ -1,37 +1,38 @@
 'use strict';
 const db = require('@arangodb').db;
-const aisisInstances = 'aisisInstances';
+const collectionName = 'aisisInstances';
+const auth = require("../util/auth");
+const usersCollection = "users";
+const sessionsCollection = "sessions";
 
-const queues = require('@arangodb/foxx/queues');
-const queue = queues.create('expirationQueue');
-
-const usersCollection = module.context.collectionName("users");
-const sessions = module.context.collectionName("sessions");
-
-const auth = require("./util/auth");
-const users = module.context.collection("users");
-if (!users.firstExample({ username: "admin" })) {
-  users.save({
-    username: "admin",
-    password: auth.create("hunter2")
-  });
+if (!db._collection(collectionName)) {
+  db._createDocumentCollection(collectionName);
 }
 
 if (!db._collection(usersCollection)) {
   db._createDocumentCollection(usersCollection);
 }
+
 if (!db._collection(sessionsCollection)) {
   db._createDocumentCollection(sessionsCollection);
 }
-module.context.collection(usersCollection).ensureIndex({
+
+let users = db._collection('users')
+users.ensureIndex({
   type: "hash",
   unique: true,
   fields: ["username"]
-});
+})
 
-if (!db._collection(collectionName)) {
-  db._createDocumentCollection(aisisInstances);
+if (!users.firstExample({ authuser: "admin"})) {
+  users.save({
+    authuser: "admin",
+    authpassword: auth.create("password")
+  });
 }
+
+const queues = require('@arangodb/foxx/queues');
+const queue = queues.create('expirationQueue');
 
 // Creates the expire job to check if databases should be expired and dropped.
 queue.push(
@@ -39,7 +40,7 @@ queue.push(
   {},
   {
     repeatTimes: Infinity,
-    repeatUntil: -1, // Forever
-    repeatDelay: (24 * 60 * 60 * 1000) // Daily
+    repeatUntil: -1,
+    repeatDelay: (24 * 60 * 60 * 1000) // Daily, set to 30000 for dev
   }
 );
